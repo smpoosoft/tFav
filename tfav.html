@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tFav</title>
+<link rel="stylesheet" href="tfav.css">
+</head>
+<body class="theme-auto">
+  <div id="app">
+    <header id="topbar">
+      <h1>tFav</h1>
+      <span id="stats"></span>
+      <div id="topActions">
+        <button id="btnDeleteAll" class="btn danger" title="删除所有非锁定组">清空</button>
+        <button id="btnSettings" class="btn" title="设置">⚙</button>
+      </div>
+    </header>
+    <main id="list"></main>
+  </div>
+  <div id="toast"></div>
+  <script type="module" src="tfav.js"></script>
+</body>
+</html>
