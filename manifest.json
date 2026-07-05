@@ -9,8 +9,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "tFav - 收起当前窗口标签页",
-    "default_popup": "popup.html"
+    "default_title": "tFav - 收纳当前窗口标签页"
   },
   "icons": {}
 }
