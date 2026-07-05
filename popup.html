@@ -2,34 +2,105 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>tFav 设置</title>
+<title>tFav</title>
 <style>
-  body { width: 260px; font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 16px; color: #202124; }
-  h1 { font-size: 15px; margin: 0 0 12px; color: #F5A623; }
-  label { display: block; font-size: 12px; color: #5f6368; margin: 10px 0 4px; }
-  select, input[type="text"] { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #dadce0; border-radius: 5px; font-size: 13px; }
-  button { margin-top: 14px; width: 100%; padding: 8px; background: #F5A623; color: #fff; border: none; border-radius: 5px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  button:hover { background: #E8941A; }
-  #status { margin-top: 8px; font-size: 12px; color: #188038; min-height: 14px; }
-  .hint { font-size: 11px; color: #9aa0a6; margin-top: 4px; }
+  body {
+    width: 280px;
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    padding: 16px;
+    color: #202124;
+  }
+  h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: #F5A623;
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  h1 span { font-size: 11px; color: #9aa0a6; font-weight: 400; }
+  .btn {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 0;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    margin-bottom: 8px;
+    transition: background 0.12s;
+  }
+  .btn-primary {
+    background: #F5A623;
+    color: #fff;
+  }
+  .btn-primary:hover { background: #E8941A; }
+  .btn-secondary {
+    background: #f1f3f4;
+    color: #202124;
+  }
+  .btn-secondary:hover { background: #e3e6ea; }
+  .btn-disabled {
+    background: #f1f3f4;
+    color: #9aa0a6;
+    cursor: default;
+  }
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .btn-row .btn { margin-bottom: 0; }
+  .btn-row .btn-half { flex: 1; }
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #5f6368;
+    margin-bottom: 4px;
+  }
+  .checkbox-row input { margin: 0; }
+  .divider {
+    border: none;
+    border-top: 1px solid #e8eaed;
+    margin: 10px 0;
+  }
+  .hint {
+    font-size: 11px;
+    color: #9aa0a6;
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+  #status {
+    font-size: 12px;
+    color: #188038;
+    min-height: 16px;
+    margin-top: 4px;
+  }
+  #status.error { color: #d93025; }
 </style>
 </head>
 <body>
-  <h1>tFav 设置</h1>
+  <h1>tFav <span>v0.1</span></h1>
 
-  <label for="themeSelect">主题</label>
-  <select id="themeSelect">
-    <option value="auto">跟随系统</option>
-    <option value="light">亮色</option>
-    <option value="dark">暗色</option>
-  </select>
+  <button id="btnSweep" class="btn btn-primary">收纳</button>
 
-  <label>
-    <input type="checkbox" id="includePinned">
-    收起时包含固定标签页
-  </label>
+  <div class="btn-row">
+    <button id="btnAppend" class="btn btn-disabled btn-half" title="暂未开放">追加</button>
+    <button id="btnView" class="btn btn-secondary btn-half">查看收纳</button>
+  </div>
 
-  <button id="saveBtn">保存</button>
+  <div class="checkbox-row">
+    <input type="checkbox" id="cbKeepTabs" checked>
+    <label for="cbKeepTabs">标签保持</label>
+  </div>
+  <div class="hint">勾选后收纳时会关闭标签页，取消勾选仅保存数据不关标签</div>
+
+  <hr class="divider">
+
   <div id="status"></div>
 
   <script src="popup.js"></script>

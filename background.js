@@ -1,18 +1,22 @@
 import { collectBatch } from './lib/dedupe.js';
 import { getSettings, getSchemaVersion, setSchemaVersion } from './lib/storage.js';
 
-const SELF_URLS = new Set();
-
 chrome.runtime.onInstalled.addListener(async () => {
   const ver = await getSchemaVersion();
   if (ver === 0) await setSchemaVersion(1);
 });
 
-chrome.action.onClicked.addListener(async (tab) => {
-  const selfUrl = `chrome-extension://${chrome.runtime.id}/`;
-  SELF_URLS.add(selfUrl + 'tfav.html');
-  SELF_URLS.add(selfUrl + 'popup.html');
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.action === 'sweep') {
+    handleSweep(msg.closeTabs === true)
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ error: err.message || String(err) }));
+    return true;
+  }
+});
 
+async function handleSweep(closeTabs) {
+  const selfUrl = `chrome-extension://${chrome.runtime.id}/`;
   const settings = await getSettings();
   const allTabs = await chrome.tabs.query({ currentWindow: true });
   const now = Date.now();
@@ -25,27 +29,22 @@ chrome.action.onClicked.addListener(async (tab) => {
   });
 
   if (collectable.length === 0) {
-    try {
-      await chrome.tabs.update(tab.id, { url: selfUrl + 'tfav.html' });
-    } catch {}
-    return;
+    return { keepCount: 0, closeCount: 0, dupCount: 0, message: '没有可收纳的标签页' };
   }
 
   const result = await collectBatch(collectable, now);
 
-  const failedIds = [];
-  for (const t of collectable) {
-    try {
-      await chrome.tabs.remove(t.id);
-    } catch {
-      failedIds.push(t.id);
+  let closeCount = 0;
+  if (closeTabs) {
+    for (const t of collectable) {
+      try { await chrome.tabs.remove(t.id); closeCount++; } catch {}
     }
   }
 
-  const existingPage = allTabs.find((t) => t.url && t.url.includes('tfav.html'));
-  if (existingPage) {
-    await chrome.tabs.update(existingPage.id, { active: true });
-  } else {
-    await chrome.tabs.create({ url: selfUrl + 'tfav.html' });
-  }
-});
+  return {
+    keepCount: result.newCount,
+    closeCount: closeCount,
+    dupCount: result.dupCount,
+    total: result.total,
+  };
+}
