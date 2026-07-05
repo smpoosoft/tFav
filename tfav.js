@@ -235,7 +235,13 @@ document.getElementById('btnDeleteAll').addEventListener('click', async () => {
 });
 
 document.getElementById('btnSettings').addEventListener('click', () => {
-  chrome.runtime.openOptionsPage ? chrome.runtime.openOptionsPage() : chrome.tabs.create({ url: 'popup.html' });
+  chrome.tabs.create({ url: 'popup.html' });
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.tfav_sessions || changes.tfav_items) {
+    load();
+  }
 });
 
 load();
