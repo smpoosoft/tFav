@@ -42,19 +42,7 @@
     color: #202124;
   }
   .btn-secondary:hover { background: #e3e6ea; }
-  .btn-disabled {
-    background: #f1f3f4;
-    color: #9aa0a6;
-    cursor: default;
-  }
-  .btn-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .btn-row .btn { margin-bottom: 0; }
-  .btn-row .btn-half { flex: 1; }
-  .checkbox-row {
+.checkbox-row {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -84,14 +72,11 @@
 </style>
 </head>
 <body>
-  <h1>tFav <span>v0.1</span></h1>
+  <h1>tFav <span>v0.2</span></h1>
 
   <button id="btnSweep" class="btn btn-primary">收纳</button>
 
-  <div class="btn-row">
-    <button id="btnAppend" class="btn btn-disabled btn-half" title="暂未开放">追加</button>
-    <button id="btnView" class="btn btn-secondary btn-half">查看收纳</button>
-  </div>
+  <button id="btnView" class="btn btn-secondary">查看收藏 / 收纳</button>
 
   <div class="checkbox-row">
     <input type="checkbox" id="cbKeepTabs" checked>

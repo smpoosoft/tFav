@@ -4,10 +4,11 @@
 
 tFav 对标 OneTab 的「一键收起」交互体验，但核心定位是**自用标签页收藏工具**。与 OneTab 的关键区别：
 
-- **收藏优先**：每次收纳不是一次性快照，而是向收藏库追加内容原子。去重后同一内容不管从什么入口进来都合并到一条记录。
-- **强制去重**：pathKey（`?` 之前）+ titleClean 双重判定；推广/追踪参数自动清洗；同内容跨入口自动合并，`collectedTimes[]` 保留所有收纳时间拐点。
+- **稍后阅读与收藏同源**：收纳即稍后阅读，标记收藏即写入浏览器原生书签（统一视图，不另立收藏池）。
+- **与浏览器书签双向同步**：项目即 `chrome.bookmarks` 的高级 viewer + editor；浏览器侧增删改实时反映到项目，项目侧改名/取消收藏实时写回浏览器。无导入按钮、无手工步骤。
+- **强制去重**：pathKey（`?` 之前）+ titleClean 双重判定；推广/追踪参数自动清洗；同内容跨入口自动合并。
+- **收藏冗余维护**：扫描整个 `chrome.bookmarks` 树，按 pathKey+titleClean 发现重复副本，提供逐项取舍 / 一键合并到指定保留项 —— 这是项目相对原生书签管理器的主要增值。
 - **仅 Chrome**（不兼容其它浏览器）。
-- **数据只存本地**（`chrome.storage.local`），不上传、不分享。
 - **无依赖、无构建**，原生 JS，`chrome://extensions` 直接加载跑。
 
 ## 用法
@@ -29,7 +30,8 @@ tFav/
 ├── lib/
 │   ├── urlkit.js          # URL pathKey 提取、titleClean、参数清洗
 │   ├── storage.js         # chrome.storage.local 封装 + CRUD
-│   └── dedupe.js          # 去重管线：collectBatch
+│   ├── dedupe.js          # 去重管线：collectBatch
+│   └── bookmarks.js       # 浏览器书签同步控制器 + 重复组分析 + 合并
 ├── prd.md                 # 产品需求文档
 ├── README.md              # 本文件
 └── todo.md                # 任务清单
@@ -40,7 +42,8 @@ tFav/
 **tfav_items** — 内容原子（一条 = 一个唯一内容）
 ```jsonc
 { id, pathKey, title, titleClean, urls: [{url, collectedTimestamps}],
-  collectedCount, firstCollectedAt, lastCollectedAt, contentFingerprint: null }
+  collectedCount, firstCollectedAt, lastCollectedAt, contentFingerprint: null,
+  starred: false, bookmarkIds: [], lastStarredAt: null }
 ```
 
 **tfav_sessions** — 收纳事件（一次点图标 = 一条 session）
@@ -55,14 +58,15 @@ tFav/
 
 ## 路线图
 
-- **P1 (当前)**：一键收纳 + URL 级去重 + 列表页 + 恢复/删除/锁定/命名 + 持久化
-- **P2**：导入导出 + 拖拽排序 + 单条收藏入口
+- **P1**：一键收纳 + URL 级去重 + 列表页 + 恢复/删除/锁定/命名 + 持久化
+- **P2 (当前)**：收藏与浏览器书签同源同步 + 收藏冗余发现与快速合并 / 取舍 + 收藏多选恢复为标签
+- **P3**：导入导出 + 拖拽排序 + 单条收藏入口
 - **P5 (远期)**：Readability + SimHash 内容级去重（跨站同文自动合并）
 
 ## 隐私
 
-- 权限：仅 `tabs` + `storage`
+- 权限：`tabs` + `storage` + `bookmarks` + `alarms`
 - 不申请 `<all_urls>`
-- 不上传、不统计、不联网
+- 不上传、不统计、不联网（仅本地读写浏览器书签 API）
 
 主色 `#F5A623` · Chrome only · 自用工具

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "tFav - Tab Favorite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "一键收起当前窗口标签页，去重后收藏为内容列表，随时恢复",
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "bookmarks", "alarms"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
