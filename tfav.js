@@ -1,4 +1,5 @@
 import { getItems, getSessions, getSettings, getGroups, getTags } from './lib/storage.js';
+import { showModal, showConfirm } from './ui/modal.js';
 
 let items = [];
 let sessions = [];
@@ -87,7 +88,7 @@ function render() {
   document.getElementById('viewStar').classList.toggle('hidden', currentTab !== 'star');
   document.getElementById('tabSweep').classList.toggle('active', currentTab === 'sweep');
   document.getElementById('tabStar').classList.toggle('active', currentTab === 'star');
-  document.getElementById('btnDeleteAll').style.display = currentTab === 'sweep' ? '' : 'none';
+  document.getElementById('btnDeleteAll').classList.toggle('hidden', currentTab !== 'sweep');
 
   if (currentTab === 'sweep') {
     document.getElementById('stats').textContent =
@@ -160,7 +161,13 @@ function renderSessionCard(sess) {
 
   actions.appendChild(mkBtn('全部恢复', 'btn accent small', async () => {
     const ids = [...sess.resourceIds];
-    if (ids.length > 50 && !confirm(`将恢复 ${ids.length} 个标签页，确定？`)) return;
+    if (ids.length > 50) {
+      const ok = await showConfirm({
+        title: '恢复标签页',
+        message: `将恢复 ${ids.length} 个标签页，确定继续吗？`,
+      });
+      if (!ok) return;
+    }
     for (const rid of ids) {
       const it = items.find((x) => x.id === rid);
       const url = it?.urls?.[it.urls.length - 1]?.url;
@@ -173,7 +180,13 @@ function renderSessionCard(sess) {
 
   actions.appendChild(mkBtn('全部恢复并保留', 'btn small', async () => {
     const ids = [...sess.resourceIds];
-    if (ids.length > 50 && !confirm(`将恢复 ${ids.length} 个标签页，确定？`)) return;
+    if (ids.length > 50) {
+      const ok = await showConfirm({
+        title: '恢复标签页',
+        message: `将恢复 ${ids.length} 个标签页，确定继续吗？`,
+      });
+      if (!ok) return;
+    }
     for (const rid of ids) {
       const it = items.find((x) => x.id === rid);
       const url = it?.urls?.[it.urls.length - 1]?.url;
@@ -183,7 +196,12 @@ function renderSessionCard(sess) {
   }));
 
   actions.appendChild(mkBtn('删除组', 'btn danger small', async () => {
-    if (!confirm('确定删除这组？（收藏内容不受影响）')) return;
+    const ok = await showConfirm({
+      title: '删除收纳组',
+      message: '确定删除这组吗？收藏内容不受影响。',
+      submitText: '删除',
+    });
+    if (!ok) return;
     await removeSession(sess.id);
     await load();
     toast('已删除');
@@ -257,9 +275,13 @@ function renderGroupPane(starredItems) {
   }
 
   document.getElementById('btnAddGroup').onclick = async () => {
-    const name = prompt('分组名称', '新分组');
-    if (!name) return;
-    await send({ action: 'addGroup', name });
+    const values = await showModal({
+      title: '添加分组',
+      fields: [{ name: 'name', label: '分组名称', type: 'text', value: '新分组', required: true }],
+      submitText: '添加',
+    });
+    if (!values?.name?.trim()) return;
+    await send({ action: 'addGroup', name: values.name.trim() });
     await load(true);
     toast('已添加分组');
   };
@@ -287,7 +309,12 @@ function groupRow(g, count, active) {
     del.title = '删除分组';
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`删除分组「${g.name}」？条目不会被删除。`)) return;
+      const ok = await showConfirm({
+        title: '删除分组',
+        message: `删除「${g.name}」后，分组中的条目不会被删除。`,
+        submitText: '删除',
+      });
+      if (!ok) return;
       await send({ action: 'removeGroup', groupId: g.id });
       if (activeGroupId === g.id) activeGroupId = null;
       await load(true);
@@ -296,9 +323,13 @@ function groupRow(g, count, active) {
 
     name.addEventListener('dblclick', async (e) => {
       e.stopPropagation();
-      const nv = prompt('重命名分组', g.name);
-      if (!nv || nv === g.name) return;
-      await send({ action: 'renameGroup', groupId: g.id, name: nv });
+      const values = await showModal({
+        title: '重命名分组',
+        fields: [{ name: 'name', label: '分组名称', type: 'text', value: g.name, required: true }],
+        submitText: '保存',
+      });
+      if (!values?.name?.trim() || values.name.trim() === g.name) return;
+      await send({ action: 'renameGroup', groupId: g.id, name: values.name.trim() });
       await load(true);
     });
   }
@@ -322,38 +353,95 @@ function groupRow(g, count, active) {
   return el;
 }
 
+function flattenTags() {
+  const byParent = new Map();
+  for (const { tag, depth } of flattenTags()) {
+    const key = tag.parentId || '';
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(tag);
+  }
+  for (const list of byParent.values()) {
+    list.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  }
+
+  const out = [];
+  const walk = (parentId, depth) => {
+    for (const tag of byParent.get(parentId) || []) {
+      out.push({ tag, depth });
+      walk(tag.id, depth + 1);
+    }
+  };
+  walk('', 0);
+  return out;
+}
+
+function descendantTagIds(tagId) {
+  const children = tags.filter((t) => t.parentId === tagId);
+  return children.flatMap((child) => [child.id, ...descendantTagIds(child.id)]);
+}
+
+function tagFilterIds(tagId) {
+  return tagId ? [tagId, ...descendantTagIds(tagId)] : [];
+}
+
+function tagParentOptions(excludeId = '') {
+  const excluded = excludeId ? new Set([excludeId, ...descendantTagIds(excludeId)]) : new Set();
+  const options = [{ value: '', label: '一级标签' }];
+  for (const { tag, depth } of flattenTags()) {
+    if (excluded.has(tag.id)) continue;
+    options.push({ value: tag.id, label: `${'— '.repeat(depth)}${tag.name}` });
+  }
+  return options;
+}
+
 function renderTagPane(starredItems) {
   const root = document.getElementById('tagTree');
   root.innerHTML = '';
 
-  root.appendChild(tagRow({ id: null, name: '全部' }, starredItems.length, activeTagId === null));
+  root.appendChild(tagRow({ id: null, name: '全部' }, starredItems.length, activeTagId === null, 0));
 
-  for (const t of tags) {
-    const cnt = starredItems.filter((it) => (it.tagIds || []).includes(t.id)).length;
-    root.appendChild(tagRow(t, cnt, activeTagId === t.id));
+  for (const { tag, depth } of flattenTags()) {
+    const ids = tagFilterIds(tag.id);
+    const cnt = starredItems.filter((it) => ids.some((id) => (it.tagIds || []).includes(id))).length;
+    root.appendChild(tagRow(tag, cnt, activeTagId === tag.id, depth + 1));
   }
 
   document.getElementById('btnAddTag').onclick = async () => {
-    const name = prompt('标签名称', '新标签');
-    if (!name) return;
     const colors = ['#F5A623', '#188038', '#1A73E8', '#D93025', '#9334E6', '#E37400'];
     const color = colors[tags.length % colors.length];
-    await send({ action: 'addTag', name, color });
+    const values = await showModal({
+      title: '添加标签',
+      fields: [
+        { name: 'name', label: '标签名称', type: 'text', value: '新标签', required: true },
+        { name: 'color', label: '颜色', type: 'color', value: color },
+        { name: 'parentId', label: '父级标签', type: 'select', value: '', options: tagParentOptions() },
+      ],
+      submitText: '添加',
+    });
+    if (!values?.name?.trim()) return;
+    await send({
+      action: 'addTag',
+      name: values.name.trim(),
+      color: values.color,
+      parentId: values.parentId,
+    });
     await load(true);
     toast('已添加标签');
   };
 }
 
-function tagRow(t, count, active) {
+function tagRow(t, count, active, depth = 0) {
   const el = document.createElement('div');
   el.className = 'tag-item' + (active ? ' active' : '');
   el.dataset.tagId = t.id ?? '';
+  el.dataset.depth = String(depth);
 
   if (t.id) {
     const dot = document.createElement('span');
     dot.className = 't-dot';
     dot.style.background = t.color || 'var(--accent)';
     el.appendChild(dot);
+    el.draggable = true;
   }
 
   const name = document.createElement('span');
@@ -373,7 +461,12 @@ function tagRow(t, count, active) {
     del.title = '删除标签';
     del.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (!confirm(`删除标签「${t.name}」？条目不会被删除。`)) return;
+      const ok = await showConfirm({
+        title: '删除标签',
+        message: `删除「${t.name}」后，子标签会上移一级，条目不会被删除。`,
+        submitText: '删除',
+      });
+      if (!ok) return;
       await send({ action: 'removeTag', tagId: t.id });
       if (activeTagId === t.id) activeTagId = null;
       await load(true);
@@ -382,9 +475,29 @@ function tagRow(t, count, active) {
 
     name.addEventListener('dblclick', async (e) => {
       e.stopPropagation();
-      const nv = prompt('重命名标签', t.name);
-      if (!nv || nv === t.name) return;
-      await send({ action: 'renameTag', tagId: t.id, name: nv });
+      const values = await showModal({
+        title: '编辑标签',
+        fields: [
+          { name: 'name', label: '标签名称', type: 'text', value: t.name, required: true },
+          { name: 'color', label: '颜色', type: 'color', value: t.color || '#F5A623' },
+          {
+            name: 'parentId',
+            label: '父级标签',
+            type: 'select',
+            value: t.parentId || '',
+            options: tagParentOptions(t.id),
+          },
+        ],
+        submitText: '保存',
+      });
+      if (!values?.name?.trim()) return;
+      await send({
+        action: 'renameTag',
+        tagId: t.id,
+        name: values.name.trim(),
+        color: values.color,
+        parentId: values.parentId,
+      });
       await load(true);
     });
   }
@@ -396,9 +509,30 @@ function tagRow(t, count, active) {
 
   el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drop-target'); });
   el.addEventListener('dragleave', () => el.classList.remove('drop-target'));
+  if (t.id) {
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/tag-id', t.id);
+      e.dataTransfer.effectAllowed = 'move';
+      el.classList.add('dragging');
+    });
+    el.addEventListener('dragend', () => el.classList.remove('dragging'));
+  }
   el.addEventListener('drop', async (e) => {
     e.preventDefault();
     el.classList.remove('drop-target');
+    const movedTagId = e.dataTransfer.getData('text/tag-id');
+    if (movedTagId) {
+      if (movedTagId === t.id) return;
+      const result = await send({ action: 'moveTag', tagId: movedTagId, parentId: t.id || null });
+      if (result?.error) {
+        toast('不能把标签移动到自己的子层级');
+        return;
+      }
+      await load(true);
+      toast('已调整标签层级');
+      return;
+    }
+
     const itemId = e.dataTransfer.getData('text/item-id');
     if (!itemId || !t.id) return;
     await send({ action: 'assignItemTag', itemId, tagId: t.id, add: true });
@@ -418,8 +552,13 @@ function renderStarPane(allStarred) {
   toolbar.className = 'star-toolbar';
 
   const selAll = document.createElement('label');
-  selAll.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer';
-  selAll.innerHTML = '<input type="checkbox" id="cbSelectAll"> 全选';
+  selAll.className = 'select-all-label';
+  const selectAllInput = document.createElement('input');
+  selectAllInput.type = 'checkbox';
+  selectAllInput.id = 'cbSelectAll';
+  const selectAllText = document.createElement('span');
+  selectAllText.textContent = '全选';
+  selAll.append(selectAllInput, selectAllText);
   toolbar.appendChild(selAll);
 
   const filterInfo = document.createElement('span');
@@ -432,6 +571,7 @@ function renderStarPane(allStarred) {
   toolbar.appendChild(filterInfo);
 
   if (parts.length) {
+    toolbar.classList.add('filter-active');
     const clearBtn = mkBtn('清除筛选', 'btn small ghost clear-filter', () => {
       activeGroupId = null; activeTagId = null; render();
     });
@@ -456,7 +596,7 @@ function renderStarPane(allStarred) {
   const filtered = allStarred.filter((it) => {
     if (activeGroupId === '__ungrouped__' && (it.groupIds || []).length) return false;
     if (activeGroupId && activeGroupId !== '__ungrouped__' && !(it.groupIds || []).includes(activeGroupId)) return false;
-    if (activeTagId && !(it.tagIds || []).includes(activeTagId)) return false;
+    if (activeTagId && !tagFilterIds(activeTagId).some((id) => (it.tagIds || []).includes(id))) return false;
     return true;
   }).sort((a, b) => (b.lastStarredAt || 0) - (a.lastStarredAt || 0));
 
@@ -478,7 +618,13 @@ function renderStarPane(allStarred) {
 
   document.getElementById('batchOpen').addEventListener('click', async () => {
     const selected = filtered.filter((it) => starredSelection.has(it.id));
-    if (selected.length > 20 && !confirm(`将打开 ${selected.length} 个标签页，确定？`)) return;
+    if (selected.length > 20) {
+      const ok = await showConfirm({
+        title: '恢复收藏',
+        message: `将打开 ${selected.length} 个标签页，确定继续吗？`,
+      });
+      if (!ok) return;
+    }
     for (const it of selected) {
       const url = it.urls?.[it.urls.length - 1]?.url;
       if (url) { try { await chrome.tabs.create({ url }); } catch {} }
@@ -487,7 +633,12 @@ function renderStarPane(allStarred) {
   });
   document.getElementById('batchUnstar').addEventListener('click', async () => {
     const selected = filtered.filter((it) => starredSelection.has(it.id));
-    if (!confirm(`将取消 ${selected.length} 条收藏（同时从浏览器书签删除），确定？`)) return;
+    const ok = await showConfirm({
+      title: '取消收藏',
+      message: `将取消 ${selected.length} 条收藏，并从浏览器书签删除对应条目。`,
+      submitText: '取消收藏',
+    });
+    if (!ok) return;
     for (const it of selected) {
       await send({ action: 'unstarItem', itemId: it.id });
     }
@@ -591,9 +742,15 @@ function renderStarredRow(it) {
   }));
 
   row.appendChild(mkBtn('✎', 'btn small ghost', () => {
-    const nv = prompt('输入新标题', it.title);
-    if (!nv || nv === it.title) return;
-    send({ action: 'renameItem', itemId: it.id, title: nv }).then(() => load(true));
+    showModal({
+      title: '重命名收藏',
+      fields: [{ name: 'title', label: '标题', type: 'text', value: it.title, required: true }],
+      submitText: '保存',
+    }).then(async (values) => {
+      if (!values?.title?.trim() || values.title.trim() === it.title) return;
+      await send({ action: 'renameItem', itemId: it.id, title: values.title.trim() });
+      await load(true);
+    });
   }));
 
   row.addEventListener('click', async () => {
@@ -617,7 +774,7 @@ function buildTagPanel(it) {
   }
 
   const current = new Set(it.tagIds || []);
-  for (const tag of tags) {
+  for (const { tag, depth } of flattenTags()) {
     const label = document.createElement('label');
     label.className = 'tag-option';
 
@@ -636,6 +793,8 @@ function buildTagPanel(it) {
     const name = document.createElement('span');
     name.textContent = tag.name;
 
+    label.dataset.depth = String(depth);
+    label.dataset.depth = String(depth);
     label.append(input, dot, name);
     panel.appendChild(label);
   }
@@ -712,7 +871,12 @@ function fmtTS(ts) {
 document.getElementById('btnDeleteAll').addEventListener('click', async () => {
   const unlocked = sessions.filter((s) => !s.locked);
   if (unlocked.length === 0) { toast('没有可删除的非锁定组'); return; }
-  if (!confirm(`将删除 ${unlocked.length} 个非锁定组（收藏内容不受影响），确定？`)) return;
+  const ok = await showConfirm({
+    title: '清空收纳',
+    message: `将删除 ${unlocked.length} 个非锁定收纳组，收藏内容不受影响。`,
+    submitText: '清空',
+  });
+  if (!ok) return;
   await send({ action: 'clearUnlockedSessions' });
   await load();
   toast(`已删除 ${unlocked.length} 组`);

@@ -21,6 +21,7 @@ tFav 对标 OneTab 的「一键收起」交互体验，但核心定位是**自�
 5. 收纳后自动写入浏览器收藏夹和 Turso 云端收藏表
 6. 从列表页点标题打开、批量恢复、锁定保护、命名整理
 7. popup 设置页可配置 Turso Database URL 和 Auth Token；`.env` 仅用于本机开发调试，已被 gitignore
+8. 生成可加载的本地扩展产物：`./scripts/build.sh`
 
 ## 文件结构
 
@@ -28,8 +29,11 @@ tFav 对标 OneTab 的「一键收起」交互体验，但核心定位是**自�
 tFav/
 ├── manifest.json          # MV3 扩展清单
 ├── background.js          # service worker：监听图标点击→收纳链路
-├── tfav.html / .css / .js # 列表页（橙色主题，明暗切换）
+├── tfav.html / tfav.js    # 收纳与收藏主页面
 ├── popup.html / .js       # 设置页（主题 / pinned 选项）
+├── css/                   # common / modal / 页面样式，可复用
+├── ui/                    # 可复用 UI 模块（modal）
+├── scripts/build.sh       # 生成本地扩展产物
 ├── lib/
 │   ├── urlkit.js          # URL pathKey 提取、titleClean、参数清洗
 │   ├── storage.js         # chrome.storage.local 封装 + CRUD
@@ -64,7 +68,7 @@ tFav/
 **tfav_groups / tfav_tags** — 收藏视图的自定义分组和标签
 ```jsonc
 { id, name, createdAt }
-{ id, name, color, createdAt }
+{ id, name, color, parentId, createdAt }
 ```
 
 ## Turso 云端表
@@ -81,7 +85,7 @@ tFav/
 
 - **P1**：一键收纳 + URL 级去重 + 列表页 + 恢复/删除/锁定/命名 + 持久化
 - **P2**：收藏与浏览器书签同源同步 + 收藏冗余发现与快速合并 / 取舍 + 收藏多选恢复为标签
-- **P3 (当前)**：一键收纳写入 Turso + 原始 URL 保留 + 收藏三栏视图 + 条目拖入分组 + 标签多选
+- **P3 (当前)**：一键收纳写入 Turso + 原始 URL 保留 + 收藏三栏视图 + 树状标签 + 条目多标签 + 统一 Modal
 - **导入导出**：暂不开发
 - **P5 (远期)**：Readability + SimHash 内容级去重（跨站同文自动合并）
 

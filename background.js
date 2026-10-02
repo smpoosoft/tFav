@@ -12,9 +12,10 @@ import { initSchema, upsertItemCloud, upsertSessionCloud, deleteSessionCloud,
 
 chrome.runtime.onInstalled.addListener(async () => {
   let ver = await getSchemaVersion();
-  if (ver === 0) { await setSchemaVersion(3); ver = 3; }
+  if (ver === 0) { await setSchemaVersion(4); ver = 4; }
   if (ver < 2) await migrateToV2();
   if (ver < 3) await migrateToV3();
+  if (ver < 4) await migrateToV4();
   await initSchema();
   await bootstrapBookmarkSync();
 });
@@ -42,6 +43,16 @@ async function migrateToV3() {
     }
   }
   await setSchemaVersion(3);
+}
+
+async function migrateToV4() {
+  const allTags = await getTags();
+  for (const tag of allTags) {
+    if (tag.parentId === undefined) {
+      await upsertTag({ ...tag, parentId: null });
+    }
+  }
+  await setSchemaVersion(4);
 }
 
 async function bootstrapBookmarkSync() {
@@ -288,7 +299,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // ---- 标签 ----
   if (msg && msg.action === 'addTag') {
     (async () => {
-      const t = { id: generateId(), name: msg.name || '标签', color: msg.color || '', createdAt: Date.now() };
+      const t = {
+        id: generateId(),
+        name: msg.name || '标签',
+        color: msg.color || '',
+        parentId: msg.parentId || null,
+        createdAt: Date.now(),
+      };
       await upsertTag(t);
       await upsertTagCloud(t);
       sendResponse({ ok: true, tag: t });
@@ -299,13 +316,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const arr = await getTags();
       const t = arr.find((x) => x.id === msg.tagId);
-      if (t) { t.name = msg.name; if (msg.color !== undefined) t.color = msg.color; await upsertTag(t); await upsertTagCloud(t); }
+      if (t) {
+        if (msg.parentId !== undefined) {
+          let cursor = arr.find((x) => x.id === msg.parentId);
+          while (cursor) {
+            if (cursor.id === t.id) return sendResponse({ error: 'invalid hierarchy' });
+            cursor = cursor.parentId ? arr.find((x) => x.id === cursor.parentId) : null;
+          }
+        }
+        t.name = msg.name;
+        if (msg.color !== undefined) t.color = msg.color;
+        if (msg.parentId !== undefined) t.parentId = msg.parentId || null;
+        await upsertTag(t);
+        await upsertTagCloud(t);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'moveTag') {
+    (async () => {
+      const arr = await getTags();
+      const tag = arr.find((x) => x.id === msg.tagId);
+      const parent = msg.parentId ? arr.find((x) => x.id === msg.parentId) : null;
+      if (!tag || (msg.parentId && !parent)) return sendResponse({ error: 'not found' });
+
+      let cursor = parent;
+      while (cursor) {
+        if (cursor.id === tag.id) return sendResponse({ error: 'invalid hierarchy' });
+        cursor = cursor.parentId ? arr.find((x) => x.id === cursor.parentId) : null;
+      }
+
+      tag.parentId = parent?.id || null;
+      await upsertTag(tag);
+      await upsertTagCloud(tag);
       sendResponse({ ok: true });
     })();
     return true;
   }
   if (msg && msg.action === 'removeTag') {
     (async () => {
+      const arr = await getTags();
+      const target = arr.find((x) => x.id === msg.tagId);
+      const parentId = target?.parentId || null;
+      for (const tag of arr.filter((x) => x.parentId === msg.tagId)) {
+        tag.parentId = parentId;
+        await upsertTag(tag);
+        await upsertTagCloud(tag);
+      }
       await deleteTag(msg.tagId);
       await deleteTagCloud(msg.tagId);
       const items = await getItems();
