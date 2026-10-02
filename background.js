@@ -1,18 +1,26 @@
 import { collectBatch } from './lib/dedupe.js';
-import { getSettings, getSchemaVersion, setSchemaVersion, getItems, patchItem, upsertItem } from './lib/storage.js';
+import { getSettings, getSchemaVersion, setSchemaVersion, getItems, patchItem, upsertItem,
+         getGroups, upsertGroup, deleteGroup, getTags, upsertTag, deleteTag, generateId,
+         getSessions, upsertSession, deleteSession } from './lib/storage.js';
 import {
   syncBookmarksIntoItems, starItem, unstarItem, renameItem, moveItem,
   removeBookmarkNode, analyzeDuplicateGroups, mergeDuplicateGroup
 } from './lib/bookmarks.js';
+import { initSchema, upsertItemCloud, upsertSessionCloud, deleteSessionCloud,
+         upsertFavoriteCloud, deleteFavoriteCloud,
+         upsertGroupCloud, deleteGroupCloud, upsertTagCloud, deleteTagCloud } from './lib/turso.js';
 
 chrome.runtime.onInstalled.addListener(async () => {
   let ver = await getSchemaVersion();
-  if (ver === 0) { await setSchemaVersion(2); ver = 2; }
+  if (ver === 0) { await setSchemaVersion(3); ver = 3; }
   if (ver < 2) await migrateToV2();
+  if (ver < 3) await migrateToV3();
+  await initSchema();
   await bootstrapBookmarkSync();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  await initSchema();
   await bootstrapBookmarkSync();
 });
 
@@ -24,6 +32,16 @@ async function migrateToV2() {
     }
   }
   await setSchemaVersion(2);
+}
+
+async function migrateToV3() {
+  const items = await getItems();
+  for (const it of items) {
+    if (it.groupIds === undefined || it.tagIds === undefined) {
+      await patchItem(it.id, { groupIds: it.groupIds || [], tagIds: it.tagIds || [] });
+    }
+  }
+  await setSchemaVersion(3);
 }
 
 async function bootstrapBookmarkSync() {
@@ -52,10 +70,15 @@ async function onBookmarkCreated(id, bm) {
   if (it) {
     const bids = it.bookmarkIds || [];
     if (!bids.includes(id)) bids.push(id);
-    await patchItem(it.id, { starred: true, bookmarkIds: bids, lastStarredAt: Date.now() });
+    const patched = await patchItem(it.id, {
+      starred: true, bookmarkIds: bids, lastStarredAt: Date.now(),
+      groupIds: it.groupIds || [], tagIds: it.tagIds || [],
+    });
+    await upsertItemCloud(patched);
+    await syncFavorite(patched.id);
   } else {
     const now = Date.now();
-    await upsertItem({
+    const item = {
       id: cryptoRandomId(),
       pathKey: pk,
       title: bm.title || bm.url,
@@ -69,7 +92,12 @@ async function onBookmarkCreated(id, bm) {
       starred: true,
       bookmarkIds: [id],
       lastStarredAt: now,
-    });
+      groupIds: [],
+      tagIds: [],
+    };
+    await upsertItem(item);
+    await upsertItemCloud(item);
+    await syncFavorite(item.id);
   }
 }
 
@@ -83,7 +111,9 @@ async function onBookmarkChanged(id, info) {
         patch.urls = [...(it.urls || []), { url: info.url, collectedTimestamps: [Date.now()] }];
         patch.pathKey = extractPathKeySafe(info.url);
       }
-      await patchItem(it.id, patch);
+      const patched = await patchItem(it.id, patch);
+      await upsertItemCloud(patched);
+      await syncFavorite(patched.id);
     }
   }
 }
@@ -98,9 +128,15 @@ async function onBookmarkRemoved(id) {
     if ((it.bookmarkIds || []).includes(id)) {
       const remaining = it.bookmarkIds.filter((b) => b !== id);
       if (remaining.length === 0) {
-        await patchItem(it.id, { starred: false, bookmarkIds: [], lastStarredAt: null });
+        const patched = await patchItem(it.id, {
+          starred: false, bookmarkIds: [], lastStarredAt: null,
+        });
+        await upsertItemCloud(patched);
+        await deleteFavoriteCloud(patched.id);
       } else {
-        await patchItem(it.id, { bookmarkIds: remaining });
+        const patched = await patchItem(it.id, { bookmarkIds: remaining });
+        await upsertItemCloud(patched);
+        await syncFavorite(patched.id);
       }
     }
   }
@@ -113,6 +149,10 @@ function registerBookmarkPolling() {
 
 chrome.alarms?.onAlarm?.addListener?.((a) => {
   if (a.name === 'tfav-sync') syncBookmarksIntoItems();
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.tfav_settings) initSchema();
 });
 
 function extractPathKeySafe(u) {
@@ -156,6 +196,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const it = items.find((x) => x.id === msg.itemId);
       if (!it) return sendResponse({ error: 'not found' });
       await renameItem(it, msg.title);
+      await syncFavorite(it.id);
       sendResponse({ ok: true });
     })();
     return true;
@@ -182,7 +223,140 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })();
     return true;
   }
+  // ---- 收纳组 ----
+  if (msg && msg.action === 'updateSession') {
+    (async () => {
+      await upsertSession(msg.session);
+      await upsertSessionCloud(msg.session);
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'deleteSession') {
+    (async () => {
+      await deleteSession(msg.sessionId);
+      await deleteSessionCloud(msg.sessionId);
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'clearUnlockedSessions') {
+    (async () => {
+      const all = await getSessions();
+      for (const sess of all.filter((s) => !s.locked)) {
+        await deleteSession(sess.id);
+        await deleteSessionCloud(sess.id);
+      }
+      sendResponse({ ok: true, deleted: all.filter((s) => !s.locked).length });
+    })();
+    return true;
+  }
+  // ---- 自定义分组 ----
+  if (msg && msg.action === 'addGroup') {
+    (async () => {
+      const g = { id: generateId(), name: msg.name || '分组', createdAt: Date.now() };
+      await upsertGroup(g);
+      await upsertGroupCloud(g);
+      sendResponse({ ok: true, group: g });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'renameGroup') {
+    (async () => {
+      const arr = await getGroups();
+      const g = arr.find((x) => x.id === msg.groupId);
+      if (g) { g.name = msg.name; await upsertGroup(g); await upsertGroupCloud(g); }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'removeGroup') {
+    (async () => {
+      await deleteGroup(msg.groupId);
+      await deleteGroupCloud(msg.groupId);
+      const items = await getItems();
+      for (const it of items) {
+        if ((it.groupIds || []).includes(msg.groupId)) {
+          await patchItem(it.id, { groupIds: it.groupIds.filter((x) => x !== msg.groupId) });
+          await syncFavorite(it.id);
+        }
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  // ---- 标签 ----
+  if (msg && msg.action === 'addTag') {
+    (async () => {
+      const t = { id: generateId(), name: msg.name || '标签', color: msg.color || '', createdAt: Date.now() };
+      await upsertTag(t);
+      await upsertTagCloud(t);
+      sendResponse({ ok: true, tag: t });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'renameTag') {
+    (async () => {
+      const arr = await getTags();
+      const t = arr.find((x) => x.id === msg.tagId);
+      if (t) { t.name = msg.name; if (msg.color !== undefined) t.color = msg.color; await upsertTag(t); await upsertTagCloud(t); }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'removeTag') {
+    (async () => {
+      await deleteTag(msg.tagId);
+      await deleteTagCloud(msg.tagId);
+      const items = await getItems();
+      for (const it of items) {
+        if ((it.tagIds || []).includes(msg.tagId)) {
+          await patchItem(it.id, { tagIds: it.tagIds.filter((x) => x !== msg.tagId) });
+          await syncFavorite(it.id);
+        }
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  // ---- 条目分组 / 标签 ----
+  if (msg && msg.action === 'assignItemGroup') {
+    (async () => {
+      const it = (await getItems()).find((x) => x.id === msg.itemId);
+      if (it) {
+        const g = new Set(it.groupIds || []);
+        msg.add ? g.add(msg.groupId) : g.delete(msg.groupId);
+        await patchItem(it.id, { groupIds: [...g] });
+        await syncFavorite(it.id);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+  if (msg && msg.action === 'assignItemTag') {
+    (async () => {
+      const it = (await getItems()).find((x) => x.id === msg.itemId);
+      if (it) {
+        const t = new Set(it.tagIds || []);
+        msg.add ? t.add(msg.tagId) : t.delete(msg.tagId);
+        await patchItem(it.id, { tagIds: [...t] });
+        await syncFavorite(it.id);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
 });
+
+async function syncFavorite(itemId) {
+  const it = (await getItems()).find((x) => x.id === itemId);
+  if (!it || !it.starred) return;
+  await upsertFavoriteCloud({
+    id: it.id, itemId: it.id, pathKey: it.pathKey, title: it.title,
+    titleClean: it.titleClean, url: it.urls?.[it.urls.length - 1]?.url || '',
+    starredAt: it.lastStarredAt || 0, groupIds: it.groupIds || [], tagIds: it.tagIds || [],
+  });
+}
 
 async function starItemById(itemId) {
   const items = await getItems();
@@ -199,7 +373,7 @@ async function unstarItemById(itemId) {
 }
 
 async function handleSweep(closeTabs) {
-  const selfUrl = `chrome-extension://${chrome.runtime.id}/`;
+  await initSchema();
   const settings = await getSettings();
   const allTabs = await chrome.tabs.query({ currentWindow: true });
   const now = Date.now();
@@ -211,6 +385,14 @@ async function handleSweep(closeTabs) {
   });
   if (collectable.length === 0) return { keepCount: 0, closeCount: 0, dupCount: 0, message: '没有可收纳的标签页' };
   const result = await collectBatch(collectable, now);
+  // 收纳后自动写入收藏（浏览器书签 + favorites 云表），starItem 内部已按 pathKey+titleClean 去重
+  const items = await getItems();
+  for (const rid of result.session.resourceIds) {
+    const it = items.find((x) => x.id === rid);
+    if (!it) continue;
+    try { await starItem(it, settings.bookmarkFolder || 'tFav'); }
+    catch (e) { console.warn('auto-star failed', e); }
+  }
   let closeCount = 0;
   if (closeTabs) {
     for (const t of collectable) {

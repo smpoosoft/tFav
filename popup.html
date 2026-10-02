@@ -69,6 +69,13 @@
     margin-top: 4px;
   }
   #status.error { color: #d93025; }
+  details summary { font-size: 12px; color: #5f6368; cursor: pointer; margin: 6px 0; user-select: none; }
+  .field { margin-bottom: 6px; }
+  .field label { display: block; font-size: 11px; color: #9aa0a6; margin-bottom: 2px; }
+  .field input {
+    width: 100%; box-sizing: border-box; padding: 5px 7px; font-size: 12px;
+    border: 1px solid #dadce0; border-radius: 5px; font-family: inherit;
+  }
 </style>
 </head>
 <body>
@@ -80,9 +87,28 @@
 
   <div class="checkbox-row">
     <input type="checkbox" id="cbKeepTabs" checked>
-    <label for="cbKeepTabs">标签保持</label>
+    <label for="cbKeepTabs">收纳后关闭标签</label>
   </div>
   <div class="hint">勾选后收纳时会关闭标签页，取消勾选仅保存数据不关标签</div>
+
+  <hr class="divider">
+
+  <details id="settings">
+    <summary>设置（Turso 云同步）</summary>
+    <div class="field">
+      <label>Database URL</label>
+      <input type="text" id="tursoUrl" placeholder="libsql://xxx.turso.io">
+    </div>
+    <div class="field">
+      <label>Auth Token</label>
+      <input type="password" id="tursoToken" placeholder="">
+    </div>
+    <div class="field">
+      <label>收藏文件夹名</label>
+      <input type="text" id="bookmarkFolder" placeholder="tFav">
+    </div>
+    <button id="btnSaveSettings" class="btn btn-secondary">保存设置</button>
+  </details>
 
   <hr class="divider">
 

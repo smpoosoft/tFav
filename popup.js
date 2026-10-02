@@ -5,6 +5,28 @@ const statusEl = document.getElementById('status');
 
 let sweeping = false;
 
+// ---- 设置：加载与保存 ----
+(async () => {
+  const s = await chrome.storage.local.get('tfav_settings');
+  const v = s.tfav_settings || {};
+  document.getElementById('tursoUrl').value = v.tursoUrl || '';
+  document.getElementById('tursoToken').value = v.tursoToken || '';
+  document.getElementById('bookmarkFolder').value = v.bookmarkFolder || 'tFav';
+})();
+
+document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+  const cur = (await chrome.storage.local.get('tfav_settings')).tfav_settings || {};
+  const next = {
+    ...cur,
+    tursoUrl: document.getElementById('tursoUrl').value.trim(),
+    tursoToken: document.getElementById('tursoToken').value.trim(),
+    bookmarkFolder: document.getElementById('bookmarkFolder').value.trim() || 'tFav',
+  };
+  await chrome.storage.local.set({ tfav_settings: next });
+  statusEl.textContent = '✓ 设置已保存';
+  statusEl.className = '';
+});
+
 btnSweep.addEventListener('click', async () => {
   if (sweeping) return;
   sweeping = true;

@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "tFav - Tab Favorite",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "一键收起当前窗口标签页，去重后收藏为内容列表，随时恢复",
   "permissions": ["tabs", "storage", "bookmarks", "alarms"],
+  "host_permissions": [
+    "https://*.turso.io/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"

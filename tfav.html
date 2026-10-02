@@ -7,21 +7,40 @@
 <link rel="stylesheet" href="tfav.css">
 </head>
 <body class="theme-auto">
-  <div id="app">
-    <header id="topbar">
-      <h1>tFav</h1>
-      <span id="stats"></span>
-      <div id="topActions">
-        <button id="btnDeleteAll" class="btn danger" title="删除所有非锁定组">清空</button>
-        <button id="btnSettings" class="btn" title="设置">⚙</button>
-      </div>
-    </header>
+  <header id="topbar">
+    <h1>tFav</h1>
+    <span id="stats"></span>
     <nav id="tabs">
       <button id="tabSweep" class="tab active">收纳</button>
       <button id="tabStar" class="tab">收藏</button>
     </nav>
-    <main id="list"></main>
-  </div>
+    <div id="topActions">
+      <button id="btnDeleteAll" class="btn danger" title="删除所有非锁定组">清空</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- 收纳视图 -->
+    <div id="viewSweep" class="view"></div>
+
+    <!-- 收藏视图：三栏 -->
+    <div id="viewStar" class="view hidden">
+      <aside id="groupPane">
+        <div class="pane-title">分组</div>
+        <div id="groupList"></div>
+        <button id="btnAddGroup" class="btn small block">＋ 添加组</button>
+      </aside>
+      <section id="starPane">
+        <div id="starList"></div>
+      </section>
+      <aside id="tagPane">
+        <div class="pane-title">标签树</div>
+        <div id="tagTree"></div>
+        <button id="btnAddTag" class="btn small block">＋ 添加标签</button>
+      </aside>
+    </div>
+  </main>
+
   <div id="toast"></div>
   <script type="module" src="tfav.js"></script>
 </body>
